@@ -348,21 +348,12 @@
         .output-time-pill { position:absolute; top:7px; right:7px; min-width:38px; height:22px; padding:0 8px; border-radius:999px; display:flex; align-items:center; justify-content:center; background:rgba(17,24,39,.86); color:#fff; font-size:10px; font-weight:900; z-index:3; pointer-events:none; box-shadow:0 6px 18px rgba(15,23,42,.18); }
         .output-time-pill.running { background:rgba(37,99,235,.9); }
         @keyframes spin { to { transform:rotate(360deg); } }
-        .port { position:absolute; top:50%; width:44px; height:44px; border-radius:50%; cursor:crosshair; transform:translateY(-50%); z-index:8; pointer-events:auto; }
-        .port::after { content:""; position:absolute; left:15px; top:15px; width:14px; height:14px; border-radius:50%; border:2px solid #fff; background:#111827; box-shadow:0 0 0 1px #94a3b8; transition:transform .14s var(--ease); pointer-events:none; }
+        .port { position:absolute; top:50%; width:44px; height:44px; border-radius:50%; cursor:crosshair; transform:translateY(-50%); z-index:3; }
+        .port::after { content:""; position:absolute; left:15px; top:15px; width:14px; height:14px; border-radius:50%; border:2px solid #fff; background:#111827; box-shadow:0 0 0 1px #94a3b8; transition:transform .14s var(--ease); }
         .port:hover::after { transform:scale(1.25); }
         .port.in { left:-29px; cursor:crosshair; }
-        .port.out { right:-22px; }
+        .port.out { right:-15px; }
         .node > .port { top:50%; }
-        /* 高大节点：端口固定在标题栏高度，避免落在节点中部难以点击 */
-        .ltxDirector-node > .port,
-        .comfy-node > .port,
-        .generator-node > .port,
-        .msgen-node > .port,
-        .video-node > .port,
-        .llm-node > .port {
-            top:21px;
-        }
         .group-node,.promptGroup-node { min-width:260px; background:rgba(255,255,255,.96); border:1px solid #e8edf3; box-shadow:0 16px 42px rgba(15,23,42,.08); z-index:0; }
         .group-node .node-head,.promptGroup-node .node-head { background:#fff; border-bottom:1px solid #f1f5f9; }
         .llm-node { width:420px; }
@@ -7163,7 +7154,6 @@
             if(!opts.cascade){
                 node.running = true;
                 refreshRunNodes(node, out);
-                setTimeout(() => { node.running = false; refreshRunNodes(node, out); }, 2000);
             }
             else refreshRunNodes(node, out);
             try {
@@ -7299,6 +7289,11 @@
                 refreshRunNodes(node, out);
                 if(opts.cascade) throw err;
                 alert(err.message || actionFailed('canvas.comfyGenerate'));
+            } finally {
+                if(!opts.cascade){
+                    node.running = false;
+                    refreshRunNodes(node, out);
+                }
             }
         }
         async function callCanvasLLM(node, message, messages=[]){
