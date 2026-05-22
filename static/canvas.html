@@ -6081,8 +6081,6 @@
         }
         function comfyFieldKind(f){
             if(f.type === 'image') return 'image';
-            if(f.bind_prompt === true) return 'prompt';
-            if(f.bind_prompt === false) return 'setting';
             const key = `${f.input || ''} ${f.name || ''}`.toLowerCase();
             if(f.type === 'textarea' || /prompt|text|提示词|正向|负向/.test(key)) return 'prompt';
             return 'setting';
