@@ -6764,25 +6764,26 @@
             if(!node || node.type !== 'ltxDirector') return;
             const sources = orderedSources(node, generatorSources(node));
             const imageInputs = sources.filter(src => src.refs?.length);
+            const connectedIds = new Set(imageInputs.map(s => s.id));
             const timeline = ltxParseTimeline(node);
             const fps = Math.max(1, Number(node.frameRate) || 24);
             const defaultLen = Math.max(6, fps);
-            const manual = (timeline.segments || []).filter(s => !s.canvasSourceId);
-            const existingAuto = new Map((timeline.segments || []).filter(s => s.canvasSourceId).map(s => [s.canvasSourceId, s]));
-            const autoSegs = [];
-            let cursor = 0;
+            let segments = [...(timeline.segments || [])];
+            segments = segments.filter(s => !s.canvasSourceId || connectedIds.has(s.canvasSourceId));
+            const autoBySource = new Map(segments.filter(s => s.canvasSourceId).map(s => [s.canvasSourceId, s]));
+            let maxEnd = segments.reduce((m, s) => Math.max(m, (Number(s.start) || 0) + (Number(s.length) || defaultLen)), 0);
             for(const src of imageInputs){
                 const ref = src.refs?.[0];
                 const url = ref?.url;
                 if(!url) continue;
-                let seg = existingAuto.get(src.id);
+                let seg = autoBySource.get(src.id);
                 if(seg){
                     if(seg.imageB64 !== url){ seg.imageB64 = url; seg.imageFile = null; delete seg.imgObj; }
                     if(!seg.length || seg.length < 1) seg.length = defaultLen;
                 } else {
                     seg = {
                         id: uid('ltxseg'),
-                        start: cursor,
+                        start: maxEnd,
                         length: defaultLen,
                         prompt: src.prompt || '',
                         type: 'image',
@@ -6790,27 +6791,20 @@
                         canvasSourceId: src.id,
                         guideStrength: 1
                     };
+                    segments.push(seg);
+                    maxEnd += seg.length;
                 }
-                seg.start = cursor;
-                cursor += seg.length;
-                autoSegs.push(seg);
             }
-            let nextStart = cursor;
-            const reflowedManual = [...manual].sort((a, b) => (Number(a.start) || 0) - (Number(b.start) || 0));
-            for(const seg of reflowedManual){
-                seg.start = nextStart;
-                nextStart += Math.max(1, Number(seg.length) || defaultLen);
-            }
-            const allSegs = [...autoSegs, ...reflowedManual];
-            const maxEnd = allSegs.reduce((m, s) => Math.max(m, (Number(s.start) || 0) + (Number(s.length) || 0)), 0);
-            if(maxEnd > (Number(node.durationFrames) || 0)){
-                node.durationFrames = Math.ceil(maxEnd);
+            const timelineEnd = segments.reduce((m, s) => Math.max(m, (Number(s.start) || 0) + (Number(s.length) || defaultLen)), 0);
+            if(timelineEnd > (Number(node.durationFrames) || 0)){
+                node.durationFrames = Math.ceil(timelineEnd);
                 ltxDirectorSyncSeconds(node);
             }
-            const prevTimeline = node.ltxTimelineData;
-            node.ltxTimelineData = JSON.stringify({ segments: allSegs, audioSegments: timeline.audioSegments || [] });
+            const nextTimeline = JSON.stringify({ segments, audioSegments: timeline.audioSegments || [] });
+            if(nextTimeline === (node.ltxTimelineData || '')) return;
+            node.ltxTimelineData = nextTimeline;
             ltxRefreshTimelineEditor(node);
-            if(node.ltxTimelineData !== prevTimeline) scheduleSave();
+            scheduleSave();
         }
         function bindLTXParamsRow(container, node){
             const row = container.querySelector('[data-ltx-params]');
@@ -7032,7 +7026,7 @@
 
             renderPromptPreview(wrap.querySelector('.prompt-list'), promptInputs);
             bindLTXParamsRow(wrap, node);
-            ltxSyncConnectedImagesToTimeline(node);
+            if(!node._ltxEditor) ltxSyncConnectedImagesToTimeline(node);
             renderComfyImages(wrap.querySelector('.input-list'), node, imageInputs);
 
             const host = wrap.querySelector('[data-ltx-timeline-host]');
