@@ -196,6 +196,8 @@ CANVAS_LOCK = Lock()
 LOAD_LOCK = Lock()
 NEXT_TASK_ID = 1
 UPDATE_LOCK = Lock()
+ACTIVE_PENDING_JOBS: Dict[str, Dict[str, Any]] = {}
+ACTIVE_PENDING_LOCK = Lock()
 
 PROVIDER_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{2,40}$")
 SUPPORTED_PROVIDER_PROTOCOLS = {"openai", "apimart", "gemini", "volcengine", "runninghub"}
@@ -1031,6 +1033,13 @@ class GenerateRequest(BaseModel):
     type: str = "zimage"
     client_id: str = ""
     convert_to_jpg: bool = False
+    pending_id: str = ""
+
+class CancelTaskRequest(BaseModel):
+    pending_id: str = ""
+    canvas_task_id: str = ""
+    prompt_id: str = ""
+    backend: str = ""
 
 class DeleteHistoryRequest(BaseModel):
     timestamp: float
@@ -3009,13 +3018,23 @@ async def build_online_image_result(payload: OnlineImageRequest):
 async def online_image(payload: OnlineImageRequest):
     return await build_online_image_result(payload)
 
+def _canvas_task_is_cancelled(task_id: str) -> bool:
+    with CANVAS_TASK_LOCK:
+        return CANVAS_TASKS.get(task_id, {}).get("status") == "cancelled"
+
 async def run_canvas_image_task(task_id: str, payload: OnlineImageRequest):
     with CANVAS_TASK_LOCK:
         if task_id in CANVAS_TASKS:
+            if CANVAS_TASKS[task_id].get("status") == "cancelled":
+                return
             CANVAS_TASKS[task_id]["status"] = "running"
             CANVAS_TASKS[task_id]["updated_at"] = time.time()
     try:
+        if _canvas_task_is_cancelled(task_id):
+            return
         result = await build_online_image_result(payload)
+        if _canvas_task_is_cancelled(task_id):
+            return
         with CANVAS_TASK_LOCK:
             CANVAS_TASKS[task_id].update({
                 "status": "succeeded",
@@ -3049,6 +3068,83 @@ async def create_canvas_image_task(payload: OnlineImageRequest):
         }
     asyncio.create_task(run_canvas_image_task(task_id, payload))
     return {"task_id": task_id, "status": "queued"}
+
+def interrupt_comfy_backend(backend: str):
+    if not backend:
+        return
+    try:
+        req = urllib.request.Request(f"http://{backend}/interrupt", data=b"", method="POST")
+        urllib.request.urlopen(req, timeout=3)
+    except Exception as exc:
+        print(f"ComfyUI interrupt failed ({backend}): {exc}")
+
+def register_pending_job(pending_id: str, backend: str = ""):
+    if not pending_id:
+        return
+    with ACTIVE_PENDING_LOCK:
+        existing = ACTIVE_PENDING_JOBS.get(pending_id) or {}
+        ACTIVE_PENDING_JOBS[pending_id] = {
+            "cancelled": bool(existing.get("cancelled")),
+            "backend": backend or existing.get("backend") or "",
+            "prompt_id": existing.get("prompt_id") or "",
+        }
+
+def update_pending_job(pending_id: str, **fields):
+    if not pending_id:
+        return
+    with ACTIVE_PENDING_LOCK:
+        job = ACTIVE_PENDING_JOBS.setdefault(pending_id, {"cancelled": False})
+        job.update(fields)
+
+def clear_pending_job(pending_id: str):
+    if not pending_id:
+        return
+    with ACTIVE_PENDING_LOCK:
+        ACTIVE_PENDING_JOBS.pop(pending_id, None)
+
+def is_pending_cancelled(pending_id: str) -> bool:
+    if not pending_id:
+        return False
+    with ACTIVE_PENDING_LOCK:
+        return bool(ACTIVE_PENDING_JOBS.get(pending_id, {}).get("cancelled"))
+
+def cancel_canvas_image_task(task_id: str) -> bool:
+    if not task_id:
+        return False
+    with CANVAS_TASK_LOCK:
+        task = CANVAS_TASKS.get(task_id)
+        if not task:
+            return False
+        if task.get("status") in {"succeeded", "failed", "cancelled"}:
+            return task.get("status") == "cancelled"
+        task["status"] = "cancelled"
+        task["error"] = "任务已取消"
+        task["updated_at"] = time.time()
+        return True
+
+def mark_pending_cancelled(pending_id: str) -> bool:
+    if not pending_id:
+        return False
+    backend = ""
+    with ACTIVE_PENDING_LOCK:
+        job = ACTIVE_PENDING_JOBS.setdefault(pending_id, {"cancelled": False})
+        job["cancelled"] = True
+        backend = job.get("backend") or ""
+    if backend:
+        interrupt_comfy_backend(backend)
+    return True
+
+@app.post("/api/cancel-task")
+async def cancel_task(req: CancelTaskRequest):
+    cancelled = False
+    if req.pending_id:
+        cancelled = mark_pending_cancelled(req.pending_id) or cancelled
+    if req.canvas_task_id:
+        cancelled = cancel_canvas_image_task(req.canvas_task_id) or cancelled
+    if req.prompt_id and req.backend:
+        interrupt_comfy_backend(req.backend)
+        cancelled = True
+    return {"success": bool(cancelled or req.pending_id or req.canvas_task_id or (req.prompt_id and req.backend))}
 
 @app.get("/api/canvas-image-tasks/{task_id}")
 async def get_canvas_image_task(task_id: str):
@@ -4271,6 +4367,37 @@ async def ms_generate(req: MsGenerateRequest):
 
 # --- 本地 ComfyUI 生图 ---
 
+def _lazy_switch_value(workflow, switch_input):
+    if isinstance(switch_input, bool):
+        return switch_input
+    if not isinstance(switch_input, list) or len(switch_input) != 2:
+        return False
+    src_id = str(switch_input[0])
+    src = workflow.get(src_id) or {}
+    src_inputs = src.get("inputs") or {}
+    if src.get("class_type") == "PrimitiveBoolean":
+        return bool(src_inputs.get("value", False))
+    return False
+
+def resolve_lazy_switches(workflow):
+    """Wire consumers directly to the active LazySwitchKJ branch so API runs execute the enhancer path."""
+    if not isinstance(workflow, dict):
+        return
+    for node_id, node in workflow.items():
+        if node.get("class_type") != "LazySwitchKJ":
+            continue
+        inputs = node.get("inputs") or {}
+        on_true = inputs.get("on_true")
+        on_false = inputs.get("on_false")
+        if not on_true or not on_false:
+            continue
+        target = on_true if _lazy_switch_value(workflow, inputs.get("switch")) else on_false
+        for consumer in workflow.values():
+            consumer_inputs = consumer.get("inputs") or {}
+            for inp_name, inp_val in list(consumer_inputs.items()):
+                if isinstance(inp_val, list) and len(inp_val) == 2 and str(inp_val[0]) == str(node_id):
+                    consumer_inputs[inp_name] = target
+
 @app.post("/api/generate")
 def generate(req: GenerateRequest):
     global NEXT_TASK_ID
@@ -4291,6 +4418,9 @@ def generate(req: GenerateRequest):
                     required_images.append(image_name)
 
         target_backend = get_best_backend(required_images)
+        register_pending_job(req.pending_id, target_backend)
+        if is_pending_cancelled(req.pending_id):
+            raise Exception("任务已取消")
         with LOAD_LOCK:
             BACKEND_LOCAL_LOAD[target_backend] += 1
 
@@ -4363,6 +4493,8 @@ def generate(req: GenerateRequest):
                 for input_name, value in node_inputs.items():
                     workflow[node_id]["inputs"][input_name] = value
 
+        resolve_lazy_switches(workflow)
+
         p = {"prompt": workflow, "client_id": CLIENT_ID}
         data = json.dumps(p).encode('utf-8')
         try:
@@ -4372,8 +4504,16 @@ def generate(req: GenerateRequest):
             error_body = e.read().decode('utf-8')
             raise Exception(f"HTTP Error {e.code}: {error_body}")
 
+        update_pending_job(req.pending_id, prompt_id=prompt_id, backend=target_backend)
+        if is_pending_cancelled(req.pending_id):
+            interrupt_comfy_backend(target_backend)
+            return {"images": [], "videos": [], "outputs": [], "error": "任务已取消", "cancelled": True, "task_id": task_id, "prompt_id": prompt_id, "backend": target_backend}
+
         history_data = None
         for i in range(COMFYUI_HISTORY_TIMEOUT):
+            if is_pending_cancelled(req.pending_id):
+                interrupt_comfy_backend(target_backend)
+                return {"images": [], "videos": [], "outputs": [], "error": "任务已取消", "cancelled": True, "task_id": task_id, "prompt_id": prompt_id, "backend": target_backend}
             try:
                 res = get_comfy_history(target_backend, prompt_id)
                 if prompt_id in res:
@@ -4383,6 +4523,8 @@ def generate(req: GenerateRequest):
                 pass
             time.sleep(1)
 
+        if is_pending_cancelled(req.pending_id):
+            return {"images": [], "videos": [], "outputs": [], "error": "任务已取消", "cancelled": True, "task_id": task_id, "prompt_id": prompt_id, "backend": target_backend}
         if not history_data:
             raise Exception("ComfyUI 渲染超时")
 
@@ -4432,6 +4574,7 @@ def generate(req: GenerateRequest):
     except Exception as e:
         return {"images": [], "error": str(e)}
     finally:
+        clear_pending_job(req.pending_id)
         if target_backend:
             with LOAD_LOCK:
                 if BACKEND_LOCAL_LOAD.get(target_backend, 0) > 0:

@@ -1207,6 +1207,7 @@
         let clipboard = null;
         let lastImagePasteAt = 0;
         const activeCanvasTaskPolls = new Set();
+        const pendingAbortControllers = new Map();
         let hoveredConnectionId = '';
         let lastMouseBoard = {x: 0, y: 0};
         let undoStack = [];
@@ -4759,7 +4760,7 @@
             if(node.type === 'ltxDirector') body.appendChild(renderLTXDirectorBody(node));
             if(node.type === 'output') {
                 const pendingHtml = (node._pending || []).map(p =>
-                    `<div class="output-img-wrap loading-wrap" data-pending-id="${escapeAttr(p.id)}"><span class="output-time-pill running">${formatRunDuration(nowMs() - Number(p.startedAt || nowMs()))}</span><div class="output-spinner"></div><button class="output-del" title="${tr('common.delete')}">×</button></div>`
+                    `<div class="output-img-wrap loading-wrap" data-pending-id="${escapeAttr(p.id)}"><span class="output-time-pill running">${formatRunDuration(nowMs() - Number(p.startedAt || nowMs()))}</span><div class="output-spinner"></div><button class="output-del" title="${tr('common.cancel')}">×</button></div>`
                 ).join('');
                 body.innerHTML = renderOutputGrid(node, pendingHtml);
                 body.onwheel = e => {
@@ -4830,13 +4831,13 @@
                     e.stopPropagation();
                     const pid = wrap.dataset.pendingId;
                     if(pid){
-                        node._pending = (node._pending || []).filter(p => p.id !== pid);
-                    } else {
-                        const url = img?.dataset.url || video?.dataset.url || wrap.dataset.outputUrl || wrap.dataset.missingUrl || '';
-                        node.images = (node.images || []).filter(item => outputUrlValue(item) !== url);
-                        if(node.imageComparisons) delete node.imageComparisons[url];
-                        scheduleSave();
+                        cancelPendingRun(node, pid);
+                        return;
                     }
+                    const url = img?.dataset.url || video?.dataset.url || wrap.dataset.outputUrl || wrap.dataset.missingUrl || '';
+                    node.images = (node.images || []).filter(item => outputUrlValue(item) !== url);
+                    if(node.imageComparisons) delete node.imageComparisons[url];
+                    scheduleSave();
                     refreshNodes([node.id]);
                 };
             }
@@ -4864,7 +4865,7 @@
                 })),
                 ...(node._pending || []).map(p => ({
                     key:outputDomKeyForPending(p),
-                    html:`<div class="output-img-wrap loading-wrap" data-pending-id="${escapeAttr(p.id)}"><span class="output-time-pill running">${formatRunDuration(nowMs() - Number(p.startedAt || nowMs()))}</span><div class="output-spinner"></div><button class="output-del" title="${tr('common.delete')}">×</button></div>`
+                    html:`<div class="output-img-wrap loading-wrap" data-pending-id="${escapeAttr(p.id)}"><span class="output-time-pill running">${formatRunDuration(nowMs() - Number(p.startedAt || nowMs()))}</span><div class="output-spinner"></div><button class="output-del" title="${tr('common.cancel')}">×</button></div>`
                 }))
             ];
             const wanted = new Set(items.map(item => item.key));
@@ -6072,8 +6073,9 @@
         }
         function comfyFieldKind(f){
             if(f.type === 'image') return 'image';
+            if(f.type === 'boolean' || f.type === 'number' || f.type === 'slider' || f.type === 'dropdown') return 'setting';
             const key = `${f.input || ''} ${f.name || ''}`.toLowerCase();
-            if(f.type === 'textarea' || /prompt|text|提示词|正向|负向/.test(key)) return 'prompt';
+            if(f.type === 'textarea' || f.type === 'text' || /prompt|text|提示词|正向|负向/.test(key)) return 'prompt';
             return 'setting';
         }
         function comfyFields(node, kind='all'){
@@ -6557,6 +6559,10 @@
                 await saveCanvas();
                 const statuses = await Promise.all(taskInfos.map(task => pollCanvasImageTask(task.task_id)));
                 if(statuses.includes('failed')) throw new Error(gen.runError || tr('canvas.generationFailed'));
+                if(!pendingIds.some(id => pendingById(out, id))){
+                    gen.running = false;
+                    refreshRunNodes(gen, out);
+                }
             } catch(err) {
                 const remainingIds = pendingIds.filter(id => pendingById(out, id));
                 if(remainingIds.length){
@@ -6638,6 +6644,7 @@
             const pendingId = uid('p');
             const run = runSnapshot(node, prompt, refs);
             if(out) out._pending = [...(out._pending || []), makePending(pendingId, run)];
+            registerPendingAbort(pendingId);
             if(!opts.cascade){ node.running = true; refreshRunNodes(node, out); }
             else refreshRunNodes(node, out);
             try {
@@ -6657,8 +6664,10 @@
                         watermark:Boolean(node.watermark),
                         camerafixed:Boolean(node.cameraFixed),
                         generate_audio:Boolean(node.generateAudio)
-                    })
+                    }),
+                    signal: pendingAbortControllers.get(pendingId)?.signal
                 }).then(async r => { if(!r.ok) throw new Error(await responseErrorMessage(r, tr('canvas.videoFailed'))); return r.json(); });
+                if(!pendingStillActive(out, pendingId)) return;
                 const meta = collectRunMeta(out, pendingId);
                 if(out) out._pending = (out._pending || []).filter(p => p.id !== pendingId);
                 const outputUrls = result.videos || [];
@@ -6670,14 +6679,16 @@
                 refreshRunNodes(node, out);
                 scheduleSave();
             } catch(err) {
+                if(out) out._pending = (out._pending || []).filter(p => p.id !== pendingId);
+                if(err?.name === 'AbortError') return;
                 const meta = collectRunMeta(out, pendingId);
                 addGenerationLog({run, outputs:[], runMs:meta.runMs || 0, error:err.message || String(err)});
-                if(out) out._pending = (out._pending || []).filter(p => p.id !== pendingId);
                 node.runStatus = 'failed'; node.runError = err.message || String(err);
                 refreshRunNodes(node, out);
                 if(opts.cascade) throw err;
                 alert(err.message || tr('canvas.videoFailed'));
             } finally {
+                abortPendingRequest(pendingId);
                 node.running = false;
                 refreshRunNodes(node, out);
             }
@@ -6701,22 +6712,22 @@
             if(!ref.url) throw new Error(langIsEn() ? 'Missing input image' : '缺少输入图片');
             return uploadCanvasUrlToComfy(ref.url);
         }
-        async function runComfyUpscale(imageUrl, resolution){
+        async function runComfyUpscale(imageUrl, resolution, pendingId=''){
             if(!imageUrl) throw new Error(actionFailed('studio.superResolution', langIsEn() ? 'missing input image' : '缺少输入图片'));
             const nextInput = await uploadCanvasUrlToComfy(imageUrl);
             const upscale = await fetch('/api/generate', {
                 method:'POST',
                 headers:{'Content-Type':'application/json'},
-                body:JSON.stringify({
+                body:JSON.stringify(buildGenerateBody({
                     workflow_json:'upscale.json',
                     params:{
                         "15": { image:nextInput },
                         "172": { seed:Math.floor(Math.random() * 4294967295), resolution:Number(resolution || 2048) }
                     },
                     type:'enhance',
-                    client_id:CLIENT_ID
-                })
+                }, pendingId))
             }).then(async r => { if(!r.ok) throw new Error(await responseErrorMessage(r, actionFailed('studio.superResolution'))); return r.json(); });
+            if(isCancelledResult(upscale)) throw new Error('任务已取消');
             if(upscale.error) throw new Error(actionFailed('studio.superResolution', upscale.error));
             if(!upscale.images?.length) throw new Error(noReturnedImage('studio.superResolution'));
             return upscale.images || [];
@@ -7084,6 +7095,7 @@
             const run = runSnapshot(node, globalPrompt || segments.map(s => s.prompt).join(' | '), refs);
             run.taskLabel = tr('canvas.ltxDirector');
             if(out) out._pending = [...(out._pending||[]), makePending(pendingId, run)];
+            registerPendingAbort(pendingId);
             if(!opts.cascade){
                 node.running = true;
                 refreshRunNodes(node, out);
@@ -7098,14 +7110,15 @@
                 const result = await fetch('/api/generate', {
                     method:'POST',
                     headers:{'Content-Type':'application/json'},
-                    body:JSON.stringify({
+                    body:JSON.stringify(buildGenerateBody({
                         prompt: globalPrompt,
                         workflow_json: LTX_DIRECTOR_WORKFLOW,
                         params,
                         type:'ltx-director',
-                        client_id: CLIENT_ID
-                    })
+                    }, pendingId)),
+                    signal: pendingAbortControllers.get(pendingId)?.signal
                 }).then(async r => { if(!r.ok) throw new Error(await responseErrorMessage(r, tr('canvas.ltxFailed'))); return r.json(); });
+                if(!pendingStillActive(out, pendingId) || isCancelledResult(result)) return;
                 run.request = requestMetaFromResult(result);
                 if(result.error) throw new Error(result.error);
                 const outputs = comfyResultOutputs(result);
@@ -7121,6 +7134,7 @@
                 scheduleSave();
             } catch(err){
                 if(out) out._pending = (out._pending||[]).filter(p => p.id !== pendingId);
+                if(err?.name === 'AbortError' || String(err?.message || '') === '任务已取消') return;
                 addGenerationLog({run, outputs:[], runMs:0, error:err.message || String(err)});
                 node.runStatus = 'failed';
                 node.runError = err.message || String(err);
@@ -7128,6 +7142,7 @@
                 if(opts.cascade) throw err;
                 alert(err.message || tr('canvas.ltxFailed'));
             } finally {
+                abortPendingRequest(pendingId);
                 if(!opts.cascade){
                     node.running = false;
                     refreshRunNodes(node, out);
@@ -7151,11 +7166,13 @@
             const run = runSnapshot(node, prompt, refs);
             run.taskLabel = comfyRunLabel(node);
             if(out) out._pending = [...(out._pending||[]), makePending(pendingId, run)];
+            registerPendingAbort(pendingId);
             if(!opts.cascade){
                 node.running = true;
                 refreshRunNodes(node, out);
             }
             else refreshRunNodes(node, out);
+            const generateSignal = () => pendingAbortControllers.get(pendingId)?.signal;
             try {
                 let images = [];
                 if(mode === 'text'){
@@ -7163,38 +7180,41 @@
                     const result = await fetch('/api/generate', {
                         method:'POST',
                         headers:{'Content-Type':'application/json'},
-                        body:JSON.stringify({
+                        body:JSON.stringify(buildGenerateBody({
                             prompt,
                             width:Number(node.width || 1024),
                             height:Number(node.height || 1024),
                             workflow_json:'Z-Image.json',
                             type:'zimage',
-                            client_id:CLIENT_ID
-                        })
+                        }, pendingId)),
+                        signal: generateSignal()
                     }).then(async r => { if(!r.ok) throw new Error(await responseErrorMessage(r, actionFailed('canvas.comfyText'))); return r.json(); });
+                    if(!pendingStillActive(out, pendingId) || isCancelledResult(result)) return;
                     run.request = requestMetaFromResult(result);
                     images = comfyResultOutputs(result);
                 } else if(mode === 'enhance'){
                     run.taskLabel = tr('canvas.comfyEnhance');
                     const inputName = await comfyNameForRef(refs[0]);
+                    if(!pendingStillActive(out, pendingId)) return;
                     const enhance = await fetch('/api/generate', {
                         method:'POST',
                         headers:{'Content-Type':'application/json'},
-                        body:JSON.stringify({
+                        body:JSON.stringify(buildGenerateBody({
                             workflow_json:'Z-Image-Enhance.json',
                             params:{
                                 "15": { image:inputName },
                                 "204": { value:Number(node.enhanceStrength ?? 0.5) }
                             },
                             type:'enhance',
-                            client_id:CLIENT_ID
-                        })
+                        }, pendingId)),
+                        signal: generateSignal()
                     }).then(async r => { if(!r.ok) throw new Error(await responseErrorMessage(r, actionFailed('canvas.comfyEnhance'))); return r.json(); });
+                    if(!pendingStillActive(out, pendingId) || isCancelledResult(enhance)) return;
                     run.request = requestMetaFromResult(enhance);
                     if(enhance.error) throw new Error(actionFailed('canvas.comfyEnhance', enhance.error));
                     if(!enhance.images?.length) throw new Error(noReturnedImage('canvas.comfyEnhance'));
                     if(node.enhanceUpscale){
-                        images = await runComfyUpscale(enhance.images?.[0], node.enhanceUpscaleRes || 2048);
+                        images = await runComfyUpscale(enhance.images?.[0], node.enhanceUpscaleRes || 2048, pendingId);
                     } else {
                         images = enhance.images || [];
                     }
@@ -7233,14 +7253,15 @@
                     const result = await fetch('/api/generate', {
                         method:'POST',
                         headers:{'Content-Type':'application/json'},
-                        body:JSON.stringify({
+                        body:JSON.stringify(buildGenerateBody({
                             prompt,
                             workflow_json:workflowName,
                             params,
                             type:'workflow-custom',
-                            client_id:CLIENT_ID
-                        })
+                        }, pendingId)),
+                        signal: generateSignal()
                     }).then(async r => { if(!r.ok) throw new Error(await responseErrorMessage(r, actionFailed('canvas.comfyCustom'))); return r.json(); });
+                    if(!pendingStillActive(out, pendingId) || isCancelledResult(result)) return;
                     run.request = requestMetaFromResult(result);
                     if(result.error) throw new Error(actionFailed('canvas.comfyCustom', result.error));
                     images = comfyResultOutputs(result);
@@ -7249,10 +7270,11 @@
                     run.taskLabel = tr('canvas.comfyEdit');
                     const names = [];
                     for (const ref of refs.slice(0, 3)) names.push(await comfyNameForRef(ref));
+                    if(!pendingStillActive(out, pendingId)) return;
                     const result = await fetch('/api/generate', {
                         method:'POST',
                         headers:{'Content-Type':'application/json'},
-                        body:JSON.stringify({
+                        body:JSON.stringify(buildGenerateBody({
                             prompt,
                             workflow_json:'Flux2-Klein.json',
                             type:'klein',
@@ -7265,14 +7287,16 @@
                                 "313": { value:Boolean(names[1]) },
                                 "314": { value:Boolean(names[2]) }
                             },
-                            client_id:CLIENT_ID
-                        })
+                        }, pendingId)),
+                        signal: generateSignal()
                     }).then(async r => { if(!r.ok) throw new Error(await responseErrorMessage(r, actionFailed('canvas.comfyEdit'))); return r.json(); });
+                    if(!pendingStillActive(out, pendingId) || isCancelledResult(result)) return;
                     run.request = requestMetaFromResult(result);
                     if(result.error) throw new Error(actionFailed('canvas.comfyEdit', result.error));
                     if(!result.images?.length) throw new Error(noReturnedImage('canvas.comfyEdit'));
-                    images = node.editUpscale ? await runComfyUpscale(result.images?.[0], node.editUpscaleRes || 2048) : result.images || [];
+                    images = node.editUpscale ? await runComfyUpscale(result.images?.[0], node.editUpscaleRes || 2048, pendingId) : result.images || [];
                 }
+                if(!pendingStillActive(out, pendingId)) return;
                 const meta = collectRunMeta(out, pendingId);
                 if(out) out._pending = (out._pending||[]).filter(p => p.id !== pendingId);
                 appendOutputImages(out, images, refs[0], [meta]);
@@ -7282,14 +7306,16 @@
                 refreshRunNodes(node, out);
                 scheduleSave();
             } catch(err) {
+                if(out) out._pending = (out._pending||[]).filter(p => p.id !== pendingId);
+                if(err?.name === 'AbortError' || String(err?.message || '') === '任务已取消') return;
                 const meta = collectRunMeta(out, pendingId);
                 addGenerationLog({run, outputs:[], runMs:meta.runMs || 0, error:err.message || String(err)});
-                if(out) out._pending = (out._pending||[]).filter(p => p.id !== pendingId);
                 node.runStatus = 'failed'; node.runError = err.message || String(err);
                 refreshRunNodes(node, out);
                 if(opts.cascade) throw err;
                 alert(err.message || actionFailed('canvas.comfyGenerate'));
             } finally {
+                abortPendingRequest(pendingId);
                 if(!opts.cascade){
                     node.running = false;
                     refreshRunNodes(node, out);
@@ -8021,6 +8047,60 @@
         function pendingById(out, id){
             return (out?._pending || []).find(p => p.id === id) || null;
         }
+        function registerPendingAbort(pendingId){
+            const controller = new AbortController();
+            if(pendingId) pendingAbortControllers.set(pendingId, controller);
+            return controller;
+        }
+        function abortPendingRequest(pendingId){
+            pendingAbortControllers.get(pendingId)?.abort();
+            pendingAbortControllers.delete(pendingId);
+        }
+        function buildGenerateBody(body, pendingId){
+            const payload = {...body, client_id: CLIENT_ID};
+            if(pendingId) payload.pending_id = pendingId;
+            return payload;
+        }
+        function pendingStillActive(out, pendingId){
+            return Boolean(pendingById(out, pendingId));
+        }
+        function clearSourceRunningIfIdle(sourceId, out){
+            if(!sourceId) return;
+            const source = nodes.find(n => n.id === sourceId);
+            if(!source) return;
+            const stillPending = (out?._pending || []).some(p => p.run?.node?.id === sourceId);
+            if(!stillPending){
+                source.running = false;
+                source.runStatus = '';
+                source.runError = '';
+            }
+        }
+        function isCancelledResult(result){
+            return Boolean(result?.cancelled) || String(result?.error || '') === '任务已取消';
+        }
+        async function cancelPendingRun(node, pendingId){
+            const pending = pendingById(node, pendingId);
+            if(!pending) return;
+            abortPendingRequest(pendingId);
+            try {
+                await fetch('/api/cancel-task', {
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({
+                        pending_id: pendingId,
+                        canvas_task_id: pending.canvasTaskId || '',
+                        prompt_id: pending.promptId || pending.run?.request?.prompt_id || '',
+                        backend: pending.backend || pending.run?.request?.backend || '',
+                    })
+                });
+            } catch(err) {
+                console.warn('cancel task failed', err);
+            }
+            node._pending = (node._pending || []).filter(p => p.id !== pendingId);
+            clearSourceRunningIfIdle(pending.run?.node?.id, node);
+            refreshNodes([node.id, pending.run?.node?.id].filter(Boolean));
+            scheduleSave();
+        }
         function collectRunMetas(out, ids){
             return (ids || []).map(id => pendingById(out, id)).filter(Boolean).map(p => ({
                 runMs: nowMs() - Number(p.startedAt || nowMs()),
@@ -8064,6 +8144,9 @@
                     if(data.status === 'succeeded'){
                         completeCanvasImageTask(taskId, data.result || {});
                         return 'succeeded';
+                    }
+                    if(data.status === 'cancelled'){
+                        return 'cancelled';
                     }
                     if(data.status === 'failed'){
                         failCanvasImageTask(taskId, data.error || tr('canvas.generationFailed'));
