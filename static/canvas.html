@@ -265,6 +265,21 @@
         .ltx-params-row .field { display:flex; flex-direction:column; gap:3px; min-width:0; }
         .ltx-params-row .setting-title { font-size:9px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
         .ltx-params-row .setting-input { width:100%; height:30px; padding:0 8px; border-radius:10px; border:1px solid var(--line); background:var(--soft); font-size:11px; font-weight:700; color:var(--text); }
+        .ltx-character-ref-block { flex-shrink:0; display:flex; flex-direction:column; gap:6px; }
+        .ltx-character-ref-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+        .ltx-character-ref-head .ltx-ref-strength { display:flex; align-items:center; gap:8px; margin:0; min-width:0; }
+        .ltx-character-ref-head .ltx-ref-strength .setting-title { white-space:nowrap; }
+        .ltx-character-ref-head .ltx-ref-strength .setting-input { width:72px; height:28px; }
+        .ltx-character-ref-row { display:flex; align-items:flex-start; gap:8px; min-height:72px; }
+        .ltx-character-ref-list { display:flex; align-items:flex-start; gap:8px; flex:1; min-width:0; overflow:auto; padding-bottom:2px; }
+        .ltx-character-ref-item { position:relative; width:64px; height:64px; border-radius:12px; border:1px solid var(--line); background:var(--soft); overflow:hidden; flex:0 0 auto; }
+        .ltx-character-ref-item img { width:100%; height:100%; object-fit:cover; display:block; }
+        .ltx-character-ref-item .ltx-ref-remove { position:absolute; top:4px; right:4px; width:18px; height:18px; border:0; border-radius:999px; background:rgba(15,23,42,.72); color:#fff; font-size:12px; line-height:18px; cursor:pointer; padding:0; }
+        .ltx-character-ref-item.is-connected { box-shadow:inset 0 0 0 2px rgba(59,130,246,.55); }
+        .ltx-character-ref-item .ltx-ref-connected-badge { position:absolute; left:4px; bottom:4px; max-width:calc(100% - 8px); padding:1px 5px; border-radius:999px; background:rgba(15,23,42,.72); color:#bfdbfe; font-size:9px; font-weight:800; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .ltx-character-ref-add { width:64px; height:64px; border-radius:12px; border:1px dashed var(--line-strong); background:var(--soft); color:var(--muted); font-size:24px; font-weight:700; cursor:pointer; flex:0 0 auto; }
+        .ltx-character-ref-add:hover { border-color:var(--text); color:var(--text); }
+        .ltx-character-ref-empty { font-size:11px; color:var(--muted); padding:4px 0; }
         .ltx-director-timeline-host { flex:1; min-height:0; min-width:0; overflow:hidden; }
         .ltx-director-timeline-host .pr-wrapper { height:100%; }
         .ltx-director-timeline-host .pr-viewport { max-height:100%; }
@@ -354,6 +369,12 @@
         .port.in { left:-29px; cursor:crosshair; }
         .port.out { right:-15px; }
         .node > .port { top:50%; }
+        .ltxDirector-node > .port.in.timeline,
+        .ltx-director-node > .port.in.timeline { top:50%; }
+        .ltxDirector-node > .port.in.in-ref,
+        .ltx-director-node > .port.in.in-ref { top:22%; }
+        .ltxDirector-node > .port.in.in-ref::after,
+        .ltx-director-node > .port.in.in-ref::after { background:#2563eb; }
         .group-node,.promptGroup-node { min-width:260px; background:rgba(255,255,255,.96); border:1px solid #e8edf3; box-shadow:0 16px 42px rgba(15,23,42,.08); z-index:0; }
         .group-node .node-head,.promptGroup-node .node-head { background:#fff; border-bottom:1px solid #f1f5f9; }
         .llm-node { width:420px; }
@@ -830,12 +851,12 @@
                     <button class="tool-btn" onclick="addGeneratorNode()"><i data-lucide="wand-sparkles" class="w-4 h-4"></i><span data-i18n="canvas.apiGenerate">API生成</span></button>
                     <button class="tool-btn" onclick="addMsGenNode()"><i data-lucide="cloud-lightning" class="w-4 h-4"></i><span data-i18n="canvas.msGenerate">MS生成</span></button>
                     <button class="tool-btn" onclick="addVideoNode()"><i data-lucide="clapperboard" class="w-4 h-4"></i><span data-i18n="canvas.videoGenerate">视频生成</span></button>
-                    <button class="tool-btn" onclick="addComfyNode()"><i data-lucide="workflow" class="w-4 h-4"></i>ComfyUI</button>
                     <button class="tool-btn" onclick="addLTXDirectorNode()"><i data-lucide="film" class="w-4 h-4"></i><span data-i18n="canvas.ltxDirector">LTX Director</span></button>
                     <button class="tool-btn" onclick="addOutputNode()"><i data-lucide="circle-dot" class="w-4 h-4"></i>Output</button>
                     <button class="tool-btn" onclick="groupSelectedImages()"><i data-lucide="group" class="w-4 h-4"></i><span data-i18n="canvas.group">分组</span></button>
                 </div>
                 <div class="toolbar-fixed">
+                    <button class="tool-btn toolbar-comfy" onclick="addComfyNode()" title="ComfyUI 生成" aria-label="ComfyUI 生成" data-i18n-title="canvas.comfyGenerate"><i data-lucide="workflow" class="w-4 h-4"></i><span data-i18n="canvas.comfyGenerate">ComfyUI</span></button>
                     <button class="tool-btn toolbar-log" onclick="openCanvasLog()" title="日志" aria-label="日志" data-i18n-title="canvas.logs"><i data-lucide="list-todo" class="w-4 h-4"></i><span data-i18n="canvas.logs">日志</span></button>
                 </div>
             </div>
@@ -1182,6 +1203,7 @@
         let comfyBackendCount = 1;
         let comfyWorkflows = [];
         let comfyWorkflowCache = {};
+        const COMFYUI_LOCAL_PROVIDER = 'comfyui';
         let managedProviderId = 'comfly';
         let localImageModels = [];
         let localChatModels = [];
@@ -1371,14 +1393,16 @@
             return uniqueModels(provider?.chat_models || []);
         }
         function resolveImageProviderId(id){
+            if(id === COMFYUI_LOCAL_PROVIDER && comfyWorkflowsForMedia('image').length) return COMFYUI_LOCAL_PROVIDER;
             const providers = imageApiProviders();
             return providers.find(p => p.id === id)?.id || providers[0]?.id || '';
         }
         function providerOptions(selectedId){
             const selected = resolveImageProviderId(selectedId);
             const providers = imageApiProviders();
-            if(!providers.length) return `<option value="" disabled selected>${tr('canvas.noApiProviders') || '暂无 API 平台'}</option>`;
-            return providers.map(provider => `<option value="${escapeHtml(provider.id)}" ${provider.id === selected ? 'selected' : ''}>${escapeHtml(provider.name || provider.id)}</option>`).join('');
+            if(!providers.length && !comfyWorkflowsForMedia('image').length) return `<option value="" disabled selected>${tr('canvas.noApiProviders') || '暂无 API 平台'}</option>`;
+            const base = providers.map(provider => `<option value="${escapeHtml(provider.id)}" ${provider.id === selected ? 'selected' : ''}>${escapeHtml(provider.name || provider.id)}</option>`).join('');
+            return withComfyLocalProviderOption(base, selected, 'image');
         }
         function providerImageModels(providerId){
             // 不走 providerById（会 fallback 到第一个 provider，造成串台），直接查精确匹配
@@ -1391,12 +1415,14 @@
             return providers.length ? providers : defaultApiProviders();
         }
         function resolveVideoProviderId(id){
+            if(id === COMFYUI_LOCAL_PROVIDER && comfyWorkflowsForMedia('video').length) return COMFYUI_LOCAL_PROVIDER;
             const providers = videoApiProviders();
             return providers.find(p => p.id === id)?.id || providers[0]?.id || 'comfly';
         }
         function videoProviderOptions(selectedId){
             const selected = resolveVideoProviderId(selectedId);
-            return videoApiProviders().map(provider => `<option value="${escapeHtml(provider.id)}" ${provider.id === selected ? 'selected' : ''}>${escapeHtml(provider.name || provider.id)}</option>`).join('');
+            const base = videoApiProviders().map(provider => `<option value="${escapeHtml(provider.id)}" ${provider.id === selected ? 'selected' : ''}>${escapeHtml(provider.name || provider.id)}</option>`).join('');
+            return withComfyLocalProviderOption(base, selected, 'video');
         }
         function providerVideoModels(providerId){
             // 不走 providerById（会 fallback 到第一个 provider，造成串台），直接查精确匹配
@@ -3164,9 +3190,11 @@
                 alert(err.message || tr('canvas.msFailed'));
             }
         }
-        const LTX_DIRECTOR_WORKFLOW = 'LTXDirectorv2-API.json';
-        const LTX_DIRECTOR_WF_NODE = '46';
-        const LTX_DIRECTOR_SEED_NODE = '94:28';
+        const LTX_DIRECTOR_WORKFLOW = 'LTXDirectorWorkflow_v2-API.json';
+        const LTX_DIRECTOR_WF_NODE = '126';
+        const LTX_DIRECTOR_SEED_NODE = '28';
+        const LTX_DIRECTOR_REF_NODE = '117';
+        const LTX_CHARACTER_REF_LIMIT = 8;
         const LTX_SEGMENT_COLORS = ['#e07b3a', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f59e0b'];
 
         function defaultLTXSegment(start=0, length=120){
@@ -3202,6 +3230,8 @@
                 epsilon:0.001,
                 divisibleBy:32,
                 noiseSeed:12,
+                referenceStrength:1,
+                ltxCharacterRefs:[],
                 ltxTimelineData:'',
                 ltxLocalPrompts:'',
                 ltxSegmentLengths:'',
@@ -3278,6 +3308,12 @@
                 return [];
             }
             if(CANVAS_GENERATOR_TYPES.includes(node.type) || node.type === 'llm'){
+                if(state.originKind === 'in-ref'){
+                    return [
+                        {type:'image', label:tr('canvas.imageCard'), icon:'image-plus'},
+                        {type:'group', label:tr('canvas.group'), icon:'group'}
+                    ];
+                }
                 return [
                     {type:'image', label:tr('canvas.imageCard'), icon:'image-plus'},
                     {type:'prompt', label:tr('canvas.prompt'), icon:'text-cursor-input'},
@@ -3543,8 +3579,16 @@
             if(!created) return;
             const fromId = state.originKind === 'out' ? origin.id : created.id;
             const toId = state.originKind === 'out' ? created.id : origin.id;
-            if(canConnect(fromId, toId) && !connections.some(c => c.from === fromId && c.to === toId)){
-                connections.push({id:uid('c'), from:fromId, to:toId});
+            const toPort = (() => {
+                const target = nodes.find(n => n.id === toId);
+                if(target?.type !== 'ltxDirector') return undefined;
+                if(state.originKind === 'in-ref') return 'characterRef';
+                if(state.originKind === 'in') return 'timeline';
+                const portEl = state.targetPortEl;
+                if(portEl?.classList.contains('in-ref')) return 'characterRef';
+                return 'timeline';
+            })();
+            if(addConnection(fromId, toId, toPort)){
                 syncGeneratorInputs();
                 scheduleSave();
                 render();
@@ -4779,7 +4823,14 @@
             };
             const canInput = ['generator','comfy','ltxDirector','output','llm','msgen','video'].includes(node.type) || (node.type === 'loop' && (node.imageInput || node.showPrompt));
             const canOutput = ['image','prompt','loop','group','promptGroup','generator','comfy','ltxDirector','llm','msgen','video'].includes(node.type);
-            if(canInput) el.insertAdjacentHTML('beforeend', `<div class="port in" title="${tr('canvas.connectHere')}"></div>`);
+            if(canInput){
+                if(node.type === 'ltxDirector'){
+                    el.insertAdjacentHTML('beforeend', `<div class="port in timeline" data-input-port="timeline" title="${escapeAttr(tr('canvas.ltxPortTimeline'))}"></div>`);
+                    el.insertAdjacentHTML('beforeend', `<div class="port in in-ref" data-input-port="characterRef" title="${escapeAttr(tr('canvas.ltxPortCharacterRef'))}"></div>`);
+                } else {
+                    el.insertAdjacentHTML('beforeend', `<div class="port in" title="${tr('canvas.connectHere')}"></div>`);
+                }
+            }
             if(canOutput) el.insertAdjacentHTML('beforeend', `<div class="port out" title="${tr('canvas.dragConnect')}"></div>`);
             el.insertAdjacentHTML('beforeend', `<div class="resize-handle" title="${tr('canvas.resize')}"></div>`);
             el.querySelector('.node-head').onmousedown = e => { if(e.button === 0) startNodeDrag(e, node); };
@@ -4795,7 +4846,12 @@
                 };
             };
             bindNodePort(el.querySelector('.port.out'), 'out');
-            bindNodePort(el.querySelector('.port.in'), 'in');
+            if(node.type === 'ltxDirector'){
+                bindNodePort(el.querySelector('.port.in.timeline'), 'in');
+                bindNodePort(el.querySelector('.port.in.in-ref'), 'in-ref');
+            } else {
+                bindNodePort(el.querySelector('.port.in'), 'in');
+            }
             return el;
         }
         function bindOutputWrap(wrap, node){
@@ -5580,9 +5636,12 @@
             const imageInputs = ordered.filter(src => src.refs?.length);
             const promptInputs = ordered.filter(src => src.prompt && !src.refs?.length);
             node.apiProvider = resolveImageProviderId(node.apiProvider || '');
+            const useComfyLocal = nodeUsesComfyLocal(node);
             const imageProviderModels = providerImageModels(node.apiProvider);
-            if(!imageProviderModels.length) node.model = '';
-            else if(!imageProviderModels.includes(resolveImageModel(node.model))) node.model = imageProviderModels[0] || '';
+            if(!useComfyLocal){
+                if(!imageProviderModels.length) node.model = '';
+                else if(!imageProviderModels.includes(resolveImageModel(node.model))) node.model = imageProviderModels[0] || '';
+            }
             wrap.innerHTML = `
                 <div class="prompt-list mb-3"></div>
                 <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">${tr('canvas.images')}</div>
@@ -5590,8 +5649,10 @@
                 <div class="gen-settings">
                     <div class="gen-settings-row">
                         <select class="select-lite provider-select">${providerOptions(node.apiProvider)}</select>
-                        <select class="select-lite model-select">${imageModelOptions(node.model, node.apiProvider)}</select>
+                        <select class="select-lite model-select" ${useComfyLocal ? 'style="display:none"' : ''}>${imageModelOptions(node.model, node.apiProvider)}</select>
                     </div>
+                    <div class="comfy-workflow-panel gen-settings" style="${useComfyLocal ? '' : 'display:none'}"></div>
+                    <div class="api-size-row-wrap" style="${useComfyLocal ? 'display:none' : ''}">
                     <div class="gen-settings-row api-size-row">
                         <select class="select-lite resolution compact-select" data-field="resolution">
                             <option value="1k">1K</option>
@@ -5645,6 +5706,7 @@
                         </label>
                         <button class="secondary-btn fit-size-btn" type="button" style="height:32px;align-self:flex-end;padding:0 10px;font-size:11px">${tr('canvas.fitImageSize')}</button>
                     </div>
+                    </div>
                 </div>
                 <div class="gen-run-row">
                     <button class="gen-btn ${node.running ? 'running' : ''}" ${node.running ? 'disabled' : ''}><i data-lucide="zap" class="w-4 h-4"></i>${node.running ? tr('canvas.generating') : tr('canvas.apiGenerate')}</button>
@@ -5654,15 +5716,32 @@
             `;
             const providerSelect = wrap.querySelector('.provider-select');
             const modelSelect = wrap.querySelector('.model-select');
+            const comfyPanel = wrap.querySelector('.comfy-workflow-panel');
+            const apiSizeWrap = wrap.querySelector('.api-size-row-wrap');
+            const syncGeneratorProviderUi = () => {
+                const comfy = nodeUsesComfyLocal(node);
+                if(modelSelect) modelSelect.style.display = comfy ? 'none' : '';
+                if(apiSizeWrap) apiSizeWrap.style.display = comfy ? 'none' : '';
+                if(comfyPanel){
+                    comfyPanel.style.display = comfy ? '' : 'none';
+                    if(comfy) bindNodeComfyWorkflowPanel(comfyPanel, node, 'image');
+                }
+            };
             providerSelect.onmousedown = e => e.stopPropagation();
             providerSelect.onclick = e => e.stopPropagation();
             providerSelect.onchange = e => {
                 e.stopPropagation();
                 node.apiProvider = e.target.value;
-                const providerModels = providerImageModels(node.apiProvider);
-                if(!providerModels.includes(resolveImageModel(node.model))) node.model = providerModels[0] || '';
-                modelSelect.innerHTML = imageModelOptions(node.model, node.apiProvider);
-                syncQualityControls();
+                if(nodeUsesComfyLocal(node)){
+                    node.comfyWorkflow = validComfyWorkflowNameForMedia(node.comfyWorkflow || '', 'image');
+                    ensureComfyWorkflow(node.comfyWorkflow).then(() => render());
+                } else {
+                    const providerModels = providerImageModels(node.apiProvider);
+                    if(!providerModels.includes(resolveImageModel(node.model))) node.model = providerModels[0] || '';
+                    modelSelect.innerHTML = imageModelOptions(node.model, node.apiProvider);
+                    syncQualityControls();
+                }
+                syncGeneratorProviderUi();
                 scheduleSave();
             };
             modelSelect.onmousedown = e => e.stopPropagation();
@@ -5866,6 +5945,7 @@
             const list = wrap.querySelector('.input-list');
             renderImageInputList(list, node, imageInputs);
             renderPromptPreview(wrap.querySelector('.prompt-list'), promptInputs);
+            syncGeneratorProviderUi();
             wrap.querySelector('.gen-btn').onclick = e => { e.stopPropagation(); runCanvasGenerate(node.id); };
             bindCascadeButtons(wrap, node.id);
             return wrap;
@@ -5878,7 +5958,8 @@
             const imageInputs = ordered.filter(src => src.refs?.length);
             const promptInputs = ordered.filter(src => src.prompt && !src.refs?.length);
             node.apiProvider = resolveVideoProviderId(node.apiProvider || 'comfly');
-            node.model = node.model || 'veo3-fast';
+            const useComfyLocal = nodeUsesComfyLocal(node);
+            if(!useComfyLocal) node.model = node.model || 'veo3-fast';
             wrap.innerHTML = `
                 <div class="prompt-list mb-3"></div>
                 <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">${tr('canvas.images') || 'Images'}</div>
@@ -5886,8 +5967,10 @@
                 <div class="gen-settings">
                     <div class="gen-settings-row">
                         <select class="select-lite video-provider" style="flex:1">${videoProviderOptions(node.apiProvider)}</select>
-                        <select class="select-lite video-model" style="flex:2">${videoModelOptions(node.model, node.apiProvider)}</select>
+                        <select class="select-lite video-model" style="flex:2;${useComfyLocal ? 'display:none' : ''}">${videoModelOptions(node.model, node.apiProvider)}</select>
                     </div>
+                    <div class="comfy-workflow-panel gen-settings" style="${useComfyLocal ? '' : 'display:none'}"></div>
+                    <div class="video-api-settings" style="${useComfyLocal ? 'display:none' : ''}">
                     <div class="gen-settings-row">
                         <label class="field" style="flex:1">
                             <div class="setting-title">${tr('canvas.videoDuration')}</div>
@@ -5926,6 +6009,7 @@
                         <button type="button" class="setting-check ${node.generateAudio ? 'active' : ''}" data-video-toggle="generateAudio"><span class="check-dot"></span>${tr('canvas.videoGenerateAudio')}</button>
                         <button type="button" class="setting-check ${node.useFrameRoles ? 'active' : ''}" data-video-toggle="useFrameRoles"><span class="check-dot"></span>${tr('canvas.videoFirstLastFrames')}</button>
                     </div>
+                    </div>
                 </div>
                 <div class="gen-run-row">
                     <button class="gen-btn ${node.running ? 'running' : ''}" ${node.running ? 'disabled' : ''}><i data-lucide="clapperboard" class="w-4 h-4"></i>${node.running ? tr('canvas.generating') : tr('canvas.videoGenerate')}</button>
@@ -5935,23 +6019,40 @@
             `;
             const providerSelect = wrap.querySelector('.video-provider');
             const modelSelect = wrap.querySelector('.video-model');
+            const comfyPanel = wrap.querySelector('.comfy-workflow-panel');
+            const videoApiSettings = wrap.querySelector('.video-api-settings');
+            const syncVideoProviderUi = () => {
+                const comfy = nodeUsesComfyLocal(node);
+                if(modelSelect) modelSelect.style.display = comfy ? 'none' : '';
+                if(videoApiSettings) videoApiSettings.style.display = comfy ? 'none' : '';
+                if(comfyPanel){
+                    comfyPanel.style.display = comfy ? '' : 'none';
+                    if(comfy) bindNodeComfyWorkflowPanel(comfyPanel, node, 'video');
+                }
+            };
             const durationSelect = wrap.querySelector('.video-duration');
             const aspectSelect = wrap.querySelector('.video-aspect');
             const resolutionSelect = wrap.querySelector('.video-resolution');
             providerSelect.value = node.apiProvider;
-            durationSelect.value = String(node.duration || 5);
-            aspectSelect.value = node.aspectRatio || '16:9';
-            resolutionSelect.value = node.resolution || '';
-            [providerSelect, modelSelect, durationSelect, aspectSelect, resolutionSelect].forEach(input => {
+            if(durationSelect) durationSelect.value = String(node.duration || 5);
+            if(aspectSelect) aspectSelect.value = node.aspectRatio || '16:9';
+            if(resolutionSelect) resolutionSelect.value = node.resolution || '';
+            [providerSelect, modelSelect, durationSelect, aspectSelect, resolutionSelect].filter(Boolean).forEach(input => {
                 input.onmousedown = e => e.stopPropagation();
                 input.onclick = e => e.stopPropagation();
             });
             providerSelect.onchange = e => {
                 e.stopPropagation();
                 node.apiProvider = e.target.value;
-                const models = providerVideoModels(node.apiProvider);
-                if(!models.includes(node.model)) node.model = models[0] || node.model;
-                modelSelect.innerHTML = videoModelOptions(node.model, node.apiProvider);
+                if(nodeUsesComfyLocal(node)){
+                    node.comfyWorkflow = validComfyWorkflowNameForMedia(node.comfyWorkflow || '', 'video');
+                    ensureComfyWorkflow(node.comfyWorkflow).then(() => render());
+                } else {
+                    const models = providerVideoModels(node.apiProvider);
+                    if(!models.includes(node.model)) node.model = models[0] || node.model;
+                    modelSelect.innerHTML = videoModelOptions(node.model, node.apiProvider);
+                }
+                syncVideoProviderUi();
                 scheduleSave();
             };
             modelSelect.onchange = e => { e.stopPropagation(); node.model = e.target.value; scheduleSave(); };
@@ -5972,6 +6073,7 @@
             const list = wrap.querySelector('.video-img-list');
             renderVideoImageInputs(list, node, imageInputs);
             renderPromptPreview(wrap.querySelector('.prompt-list'), promptInputs);
+            syncVideoProviderUi();
             wrap.querySelector('.gen-btn').onclick = e => { e.stopPropagation(); runCanvasGenerate(node.id); };
             bindCascadeButtons(wrap, node.id);
             return wrap;
@@ -6034,8 +6136,33 @@
             });
             refreshIcons();
         }
-        function comfyWorkflowOptions(selected){
-            const opts = comfyWorkflows.map(w => `<option value="${escapeHtml(w.name)}" ${w.name === selected ? 'selected' : ''}>${escapeHtml(w.title || w.name.replace('.json',''))}</option>`).join('');
+        function comfyWorkflowNameMediaKind(name){
+            const n = String(name || '').toLowerCase();
+            if(/\/image_|^custom\/image_|image_flux|image_z_image|z_image/i.test(n)) return 'image';
+            if(/ltx|director|video/i.test(n)) return 'video';
+            return 'other';
+        }
+        function comfyWorkflowMediaKind(w){
+            if(!w) return 'other';
+            const cached = comfyWorkflowCache[w.name]?.config;
+            if(cached?.mediaType === 'image' || cached?.mediaType === 'video') return cached.mediaType;
+            return comfyWorkflowNameMediaKind(w.name);
+        }
+        function comfyWorkflowsForMedia(kind){
+            return comfyWorkflows.filter(w => comfyWorkflowMediaKind(w) === kind);
+        }
+        function hasComfyWorkflowInMedia(name, kind){
+            return !!name && comfyWorkflowsForMedia(kind).some(w => w.name === name);
+        }
+        function validComfyWorkflowNameForMedia(name, kind){
+            return hasComfyWorkflowInMedia(name, kind) ? name : (comfyWorkflowsForMedia(kind)[0]?.name || '');
+        }
+        function nodeUsesComfyLocal(node){
+            return node?.apiProvider === COMFYUI_LOCAL_PROVIDER;
+        }
+        function comfyWorkflowOptions(selected, kind='all'){
+            const list = kind === 'all' ? comfyWorkflows : comfyWorkflowsForMedia(kind);
+            const opts = list.map(w => `<option value="${escapeHtml(w.name)}" ${w.name === selected ? 'selected' : ''}>${escapeHtml(w.title || w.name.replace('.json',''))}</option>`).join('');
             return opts || `<option value="">${tr('canvas.comfyNoWorkflow')}</option>`;
         }
         function hasComfyWorkflow(name){
@@ -6044,12 +6171,110 @@
         function validComfyWorkflowName(name){
             return hasComfyWorkflow(name) ? name : (comfyWorkflows[0]?.name || '');
         }
+        function withComfyLocalProviderOption(optionsHtml, selectedId, mediaKind){
+            if(!comfyWorkflowsForMedia(mediaKind).length) return optionsHtml;
+            const label = langIsEn() ? 'ComfyUI Local' : 'ComfyUI 本地';
+            const selected = selectedId === COMFYUI_LOCAL_PROVIDER;
+            return `${optionsHtml}<option value="${COMFYUI_LOCAL_PROVIDER}" ${selected ? 'selected' : ''}>${label}</option>`;
+        }
+        function currentComfyWorkflowForNode(node, mediaKind='all'){
+            if(mediaKind === 'all') return currentComfyWorkflow(node);
+            const selected = validComfyWorkflowNameForMedia(node.comfyWorkflow || '', mediaKind);
+            return comfyWorkflowCache[selected] || null;
+        }
+        function comfyFieldsForNode(node, kind='all', mediaKind='all'){
+            const data = mediaKind === 'all' ? currentComfyWorkflow(node) : currentComfyWorkflowForNode(node, mediaKind);
+            const fields = data?.config?.fields || [];
+            return kind === 'all' ? fields : fields.filter(f => comfyFieldKind(f) === kind);
+        }
+        async function buildComfyCustomParams(node, workflowName, prompt, refs){
+            const wf = await ensureComfyWorkflow(workflowName);
+            if(!workflowName || !wf) throw new Error(tr('canvas.comfyNoWorkflow'));
+            const fields = wf?.config?.fields || [];
+            const params = {};
+            const imageFields = fields.filter(f => comfyFieldKind(f) === 'image');
+            const promptFields = fields.filter(f => comfyFieldKind(f) === 'prompt');
+            const settingFields = fields.filter(f => comfyFieldKind(f) === 'setting');
+            const names = [];
+            for(const ref of refs.slice(0, imageFields.length)) names.push(await comfyNameForRef(ref));
+            imageFields.forEach((f, i) => {
+                if(!f.node || !f.input) return;
+                params[f.node] = params[f.node] || {};
+                params[f.node][f.input] = names[i] || '';
+            });
+            const upstreamPrompt = String(prompt || '').trim();
+            promptFields.forEach(f => {
+                if(!f.node || !f.input) return;
+                params[f.node] = params[f.node] || {};
+                params[f.node][f.input] = upstreamPrompt || comfyParamValue(node, f);
+            });
+            settingFields.forEach(f => {
+                if(!f.node || !f.input) return;
+                params[f.node] = params[f.node] || {};
+                if(comfyRandomEnabled(f) && comfyRandomActive(node, f.id)){
+                    node.comfyParams = node.comfyParams || {};
+                    node.comfyParams[f.id] = comfyRandomValue(f);
+                }
+                params[f.node][f.input] = comfyParamValue(node, f);
+            });
+            return {wf, params};
+        }
+        function renderNodeComfyWorkflowPanel(container, node, mediaKind){
+            if(!container) return;
+            const selected = validComfyWorkflowNameForMedia(node.comfyWorkflow || '', mediaKind);
+            if(node.comfyWorkflow && node.comfyWorkflow !== selected) node.comfyWorkflow = selected;
+            if(!node.comfyWorkflow && selected) node.comfyWorkflow = selected;
+            const data = currentComfyWorkflowForNode(node, mediaKind);
+            const fields = (data?.config?.fields || []).filter(f => comfyFieldKind(f) !== 'image');
+            container.innerHTML = `
+                <div class="gen-settings-row">
+                    <select class="select-lite comfy-workflow-select" data-field="comfyWorkflow" style="width:100%">${comfyWorkflowOptions(selected, mediaKind)}</select>
+                </div>
+                ${!selected ? `<div class="text-[11px] text-slate-400">${tr('canvas.comfyNoWorkflow')}</div>` : (!data ? `<div class="text-[11px] text-slate-400">${tr('canvas.comfyLoadingWorkflow')}</div>` : '')}
+                ${data ? fields.map(f => renderComfyCustomField(node, f)).join('') || `<div class="text-[11px] text-slate-400">${tr('canvas.comfyNoExtraParams')}</div>` : ''}
+            `;
+            if(selected && !data) ensureComfyWorkflow(selected).then(() => render());
+            container.querySelectorAll('[data-toggle-field]').forEach(btn => {
+                btn.onmousedown = e => e.stopPropagation();
+                btn.onclick = e => {
+                    e.stopPropagation();
+                    const field = btn.dataset.toggleField;
+                    node[field] = !node[field];
+                    render();
+                    scheduleSave();
+                };
+            });
+            container.querySelectorAll('button[data-comfy-param]').forEach(btn => {
+                btn.onmousedown = e => e.stopPropagation();
+                btn.onclick = e => updateComfyField(node, btn, e);
+            });
+            container.querySelectorAll('button[data-comfy-random]').forEach(btn => {
+                btn.onmousedown = e => e.stopPropagation();
+                btn.onclick = e => {
+                    e.stopPropagation();
+                    toggleComfyRandom(node.id, btn.dataset.comfyRandom);
+                };
+            });
+            container.querySelectorAll('input, select, textarea').forEach(input => {
+                input.onmousedown = e => e.stopPropagation();
+                input.onclick = e => e.stopPropagation();
+                input.onchange = e => updateComfyField(node, input, e);
+                input.oninput = e => updateComfyField(node, input, e);
+            });
+        }
+        function bindNodeComfyWorkflowPanel(container, node, mediaKind){
+            renderNodeComfyWorkflowPanel(container, node, mediaKind);
+        }
         function pruneMissingComfyWorkflows(){
             let changed = false;
-            nodes.filter(n => n.type === 'comfy').forEach(node => {
-                if(node.comfyWorkflow && !hasComfyWorkflow(node.comfyWorkflow)){
+            nodes.filter(n => n.type === 'comfy' || (n.type === 'generator' && nodeUsesComfyLocal(n)) || (n.type === 'video' && nodeUsesComfyLocal(n))).forEach(node => {
+                const kind = node.type === 'video' ? 'video' : (node.type === 'generator' ? 'image' : 'all');
+                const validName = kind === 'all'
+                    ? validComfyWorkflowName(node.comfyWorkflow || '')
+                    : validComfyWorkflowNameForMedia(node.comfyWorkflow || '', kind);
+                if(node.comfyWorkflow && node.comfyWorkflow !== validName){
                     delete comfyWorkflowCache[node.comfyWorkflow];
-                    node.comfyWorkflow = '';
+                    node.comfyWorkflow = validName;
                     changed = true;
                 }
             });
@@ -6343,7 +6568,10 @@
             const field = input.dataset.field;
             if(!field) return;
             if(field === 'comfyWorkflow'){
-                node.comfyWorkflow = validComfyWorkflowName(input.value);
+                const mediaKind = node.type === 'video' ? 'video' : (node.type === 'generator' ? 'image' : 'all');
+                node.comfyWorkflow = mediaKind === 'all'
+                    ? validComfyWorkflowName(input.value)
+                    : validComfyWorkflowNameForMedia(input.value, mediaKind);
                 node.comfyParams = {};
                 ensureComfyWorkflow(node.comfyWorkflow).then(() => render());
                 scheduleSave();
@@ -6411,8 +6639,28 @@
                 .filter(url => !isVideoUrl(url))
                 .map((url, i) => ({url, name:`${node.type || 'generated'}-${i + 1}.png`}));
         }
-        function generatorSources(gen){
-            return connections.filter(c => c.to === gen.id).map(c => nodes.find(n => n.id === c.from)).filter(Boolean).map(n => {
+        function ltxConnectionPort(connection){
+            return connection?.toPort || 'timeline';
+        }
+        function connectionsToGenerator(gen, inputPort){
+            const inbound = connections.filter(c => c.to === gen.id);
+            if(gen.type !== 'ltxDirector') return inbound;
+            const port = inputPort || 'timeline';
+            return inbound.filter(c => ltxConnectionPort(c) === port);
+        }
+        function connectionInputPortKind(connection){
+            const target = nodes.find(n => n.id === connection?.to);
+            if(target?.type === 'ltxDirector' && ltxConnectionPort(connection) === 'characterRef') return 'in-ref';
+            return 'in';
+        }
+        function ltxDirectorImageSourcesOnly(sources){
+            return (sources || []).filter(src => src.refs?.length);
+        }
+        function generatorSources(gen, opts={}){
+            const inbound = gen.type === 'ltxDirector'
+                ? connectionsToGenerator(gen, opts.inputPort || 'timeline')
+                : connections.filter(c => c.to === gen.id);
+            return inbound.map(c => nodes.find(n => n.id === c.from)).filter(Boolean).map(n => {
                 if(n.type === 'output' && (n.images||[]).length){
                     // 从 output 节点取最新一张图当作 reference 给下游
                     const last = [...n.images].reverse().map(outputUrlValue).find(Boolean);
@@ -6488,6 +6736,11 @@
             sources.forEach(s => { if(!gen.inputs.includes(s.id)) gen.inputs.push(s.id); });
             return gen.inputs.map(id => sources.find(s => s.id === id)).filter(Boolean);
         }
+        function orderedCharacterRefSources(gen, sources){
+            gen.characterRefInputs = (gen.characterRefInputs || []).filter(id => sources.some(s => s.id === id));
+            sources.forEach(s => { if(!gen.characterRefInputs.includes(s.id)) gen.characterRefInputs.push(s.id); });
+            return gen.characterRefInputs.map(id => sources.find(s => s.id === id)).filter(Boolean);
+        }
         function reorderInput(gen, movedId, targetId){
             if(!movedId || movedId === targetId) return;
             const sources = generatorSources(gen);
@@ -6505,7 +6758,10 @@
         function syncGeneratorInputs(){
             nodes.filter(n => ['generator','comfy','ltxDirector','msgen','video'].includes(n.type)).forEach(gen => {
                 orderedSources(gen, generatorSources(gen));
-                if(gen.type === 'ltxDirector') ltxSyncConnectedImagesToTimeline(gen);
+                if(gen.type === 'ltxDirector'){
+                    orderedCharacterRefSources(gen, generatorSources(gen, {inputPort:'characterRef'}));
+                    ltxSyncConnectedImagesToTimeline(gen);
+                }
             });
         }
         function refreshGeneratorInputViews(){
@@ -6518,7 +6774,11 @@
                 if(gen.type === 'generator') renderImageInputList(el.querySelector('.input-list'), gen, imageInputs);
                 if(gen.type === 'msgen') renderImageInputList(el.querySelector('.ms-img-list'), gen, imageInputs);
                 if(gen.type === 'comfy') renderComfyImages(el.querySelector('.input-list'), gen, imageInputs);
-                if(gen.type === 'ltxDirector') ltxSyncConnectedImagesToTimeline(gen);
+                if(gen.type === 'ltxDirector'){
+                    ltxSyncConnectedImagesToTimeline(gen);
+                    renderLtxCharacterRefs(el.querySelector('[data-ltx-character-ref-block]'), gen);
+                    renderComfyImages(el.querySelector('.input-list'), gen, imageInputs);
+                }
                 if(gen.type === 'video') renderVideoImageInputs(el.querySelector('.video-img-list'), gen, imageInputs);
             });
         }
@@ -6528,6 +6788,7 @@
             const sources = orderedSources(gen, generatorSources(gen));
             const prompt = sources.map(s => s.prompt).filter(Boolean).join('\n\n');
             const refs = sources.flatMap(s => s.refs || []);
+            if(nodeUsesComfyLocal(gen)) return runGeneratorComfyLocal(gen, {prompt, refs, opts});
             if(!prompt && !refs.length){ alert(tr('canvas.needPromptOrImage')); return; }
             const count = Math.max(1, Math.min(8, Number(gen.count || 1)));
             let out = outputForNode(gen, 460);
@@ -6631,12 +6892,78 @@
                 showErrorModal(err.message || tr('canvas.generationFailed'), tr('canvas.apiFailed'));
             }
         }
+        async function runGeneratorComfyLocal(gen, {prompt, refs, opts={}}){
+            const workflowName = validComfyWorkflowNameForMedia(gen.comfyWorkflow || '', 'image');
+            if(!workflowName){ alert(tr('canvas.comfyNoWorkflow')); return; }
+            gen.comfyWorkflow = workflowName;
+            const wfData = await ensureComfyWorkflow(workflowName);
+            const imageFieldCount = (wfData?.config?.fields || []).filter(f => comfyFieldKind(f) === 'image').length;
+            const promptFieldCount = (wfData?.config?.fields || []).filter(f => comfyFieldKind(f) === 'prompt').length;
+            if(!prompt && !refs.length && !promptFieldCount){ alert(tr('canvas.needPromptOrImage')); return; }
+            if(imageFieldCount && !refs.length){ alert(tr('canvas.needPromptOrImage')); return; }
+            const count = Math.max(1, Math.min(8, Number(gen.count || 1)));
+            let out = outputForNode(gen, 460);
+            const run = runSnapshot(gen, prompt || tr('canvas.comfyCustom'), refs);
+            run.taskLabel = workflowName;
+            if(!opts.cascade){ gen.running = true; refreshRunNodes(gen, out); }
+            const pendingIds = Array.from({length:count}, () => uid('p'));
+            if(out) out._pending = [...(out._pending || []), ...pendingIds.map(id => makePending(id, run, {appendGenerated:Boolean(opts.cascade)}))];
+            refreshRunNodes(gen, out);
+            registerPendingAbort(pendingIds[0]);
+            try {
+                const allImages = [];
+                for(let i = 0; i < count; i++){
+                    const pendingId = pendingIds[i];
+                    const {params} = await buildComfyCustomParams(gen, workflowName, prompt, refs);
+                    const result = await fetch('/api/generate', {
+                        method:'POST',
+                        headers:{'Content-Type':'application/json'},
+                        body:JSON.stringify(buildGenerateBody({
+                            prompt: prompt || '',
+                            workflow_json:workflowName,
+                            params,
+                            type:'workflow-custom',
+                        }, pendingId)),
+                        signal: pendingAbortControllers.get(pendingIds[0])?.signal
+                    }).then(async r => { if(!r.ok) throw new Error(await responseErrorMessage(r, actionFailed('canvas.comfyCustom'))); return r.json(); });
+                    if(!pendingStillActive(out, pendingId) || isCancelledResult(result)) return;
+                    if(result.error) throw new Error(actionFailed('canvas.comfyCustom', result.error));
+                    const images = comfyResultOutputs(result);
+                    if(!images.length) throw new Error(noReturnedImage('canvas.comfyCustom'));
+                    allImages.push(...images);
+                    run.request = requestMetaFromResult(result);
+                }
+                const metas = collectRunMetas(out, pendingIds);
+                if(out) out._pending = (out._pending || []).filter(p => !pendingIds.includes(p.id));
+                appendOutputImages(out, allImages, refs[0], metas);
+                mergeGeneratedOutputs(gen, allImages, Boolean(opts.cascade));
+                addGenerationLog({run, outputs:allImages, runMs:Math.max(...metas.map(m => m.runMs || 0), 0)});
+                gen.runStatus = 'done'; gen.runError = '';
+                refreshRunNodes(gen, out);
+                scheduleSave();
+            } catch(err) {
+                if(out) out._pending = (out._pending || []).filter(p => !pendingIds.includes(p.id));
+                if(err?.name === 'AbortError') return;
+                const metas = collectRunMetas(out, pendingIds);
+                addGenerationLog({run, outputs:[], runMs:Math.max(...metas.map(m => m.runMs || 0), 0), error:err.message || String(err)});
+                gen.runStatus = 'failed'; gen.runError = err.message || String(err);
+                refreshRunNodes(gen, out);
+                scheduleSave();
+                if(opts.cascade) throw err;
+                showErrorModal(err.message || tr('canvas.generationFailed'), tr('canvas.apiFailed'));
+            } finally {
+                abortPendingRequest(pendingIds[0]);
+                gen.running = false;
+                refreshRunNodes(gen, out);
+            }
+        }
         async function runVideoNode(nodeId, opts={}){
             const node = nodes.find(n => n.id === nodeId);
             if(!node || (node.running && !opts.cascade)) return;
             const sources = orderedSources(node, generatorSources(node));
             const prompt = sources.map(s => s.prompt).filter(Boolean).join('\n\n');
             const refs = sources.flatMap(s => s.refs || []);
+            if(nodeUsesComfyLocal(node)) return runVideoNodeComfyLocal(node, {prompt, refs, opts});
             if(node.useFrameRoles && refs[0]) refs[0] = {...refs[0], role:'first_frame'};
             if(node.useFrameRoles && refs[1]) refs[1] = {...refs[1], role:'last_frame'};
             if(!prompt){ alert(tr('canvas.videoNeedsPrompt')); return; }
@@ -6671,6 +6998,64 @@
                 const meta = collectRunMeta(out, pendingId);
                 if(out) out._pending = (out._pending || []).filter(p => p.id !== pendingId);
                 const outputUrls = result.videos || [];
+                run.request = requestMetaFromResult(result);
+                appendOutputImages(out, outputUrls, refs[0], [meta]);
+                mergeGeneratedOutputs(node, outputUrls, Boolean(opts.cascade));
+                addGenerationLog({run, outputs:outputUrls, runMs:meta.runMs || 0});
+                node.runStatus = 'done'; node.runError = '';
+                refreshRunNodes(node, out);
+                scheduleSave();
+            } catch(err) {
+                if(out) out._pending = (out._pending || []).filter(p => p.id !== pendingId);
+                if(err?.name === 'AbortError') return;
+                const meta = collectRunMeta(out, pendingId);
+                addGenerationLog({run, outputs:[], runMs:meta.runMs || 0, error:err.message || String(err)});
+                node.runStatus = 'failed'; node.runError = err.message || String(err);
+                refreshRunNodes(node, out);
+                if(opts.cascade) throw err;
+                alert(err.message || tr('canvas.videoFailed'));
+            } finally {
+                abortPendingRequest(pendingId);
+                node.running = false;
+                refreshRunNodes(node, out);
+            }
+        }
+        async function runVideoNodeComfyLocal(node, {prompt, refs, opts={}}){
+            const workflowName = validComfyWorkflowNameForMedia(node.comfyWorkflow || '', 'video');
+            if(!workflowName){ alert(tr('canvas.comfyNoWorkflow')); return; }
+            node.comfyWorkflow = workflowName;
+            const wfData = await ensureComfyWorkflow(workflowName);
+            const imageFieldCount = (wfData?.config?.fields || []).filter(f => comfyFieldKind(f) === 'image').length;
+            const promptFieldCount = (wfData?.config?.fields || []).filter(f => comfyFieldKind(f) === 'prompt').length;
+            if(!prompt && !promptFieldCount){ alert(tr('canvas.videoNeedsPrompt')); return; }
+            let out = outputForNode(node, 460);
+            const pendingId = uid('p');
+            const run = runSnapshot(node, prompt || tr('canvas.comfyCustom'), refs);
+            run.taskLabel = workflowName;
+            if(out) out._pending = [...(out._pending || []), makePending(pendingId, run)];
+            registerPendingAbort(pendingId);
+            if(!opts.cascade){ node.running = true; refreshRunNodes(node, out); }
+            else refreshRunNodes(node, out);
+            try {
+                const {params} = await buildComfyCustomParams(node, workflowName, prompt, refs);
+                const result = await fetch('/api/generate', {
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify(buildGenerateBody({
+                        prompt: prompt || '',
+                        workflow_json:workflowName,
+                        params,
+                        type:'workflow-custom',
+                    }, pendingId)),
+                    signal: pendingAbortControllers.get(pendingId)?.signal
+                }).then(async r => { if(!r.ok) throw new Error(await responseErrorMessage(r, actionFailed('canvas.comfyCustom'))); return r.json(); });
+                if(!pendingStillActive(out, pendingId)) return;
+                if(isCancelledResult(result)) return;
+                const meta = collectRunMeta(out, pendingId);
+                if(out) out._pending = (out._pending || []).filter(p => p.id !== pendingId);
+                if(result.error) throw new Error(actionFailed('canvas.comfyCustom', result.error));
+                const outputUrls = comfyResultOutputs(result);
+                if(!outputUrls.length) throw new Error(noReturnedImage('canvas.comfyCustom'));
                 run.request = requestMetaFromResult(result);
                 appendOutputImages(out, outputUrls, refs[0], [meta]);
                 mergeGeneratedOutputs(node, outputUrls, Boolean(opts.cascade));
@@ -6738,6 +7123,167 @@
                 : [...(result.images || []), ...(result.videos || [])];
         }
 
+        function normalizeLtxCharacterRefs(node){
+            if(!Array.isArray(node.ltxCharacterRefs)) node.ltxCharacterRefs = [];
+            return node.ltxCharacterRefs;
+        }
+        function ltxCharacterRefUrl(ref){
+            const url = String(ref?.url || '').trim();
+            if(!url) return '';
+            if(/^https?:\/\//i.test(url) || url.startsWith('blob:') || url.startsWith('data:')) return url;
+            return location.origin + (url.startsWith('/') ? url : '/' + url);
+        }
+        function ltxConnectedCharacterRefs(node){
+            if(!node || node.type !== 'ltxDirector') return [];
+            const sources = orderedCharacterRefSources(node, ltxDirectorImageSourcesOnly(generatorSources(node, {inputPort:'characterRef'})));
+            const refs = [];
+            for(const src of sources){
+                for(const ref of (src.refs || [])){
+                    const url = String(ref?.url || '').trim();
+                    if(!url || isVideoUrl(url)) continue;
+                    refs.push({
+                        id: `conn_${src.id}_${url}`,
+                        url,
+                        name: src.label || ref.name || tr('canvas.image'),
+                        comfyName: ref.comfy_name || '',
+                        connected: true,
+                        sourceId: src.id
+                    });
+                }
+            }
+            return refs;
+        }
+        function ltxDirectorCharacterRefEntries(node){
+            const connected = ltxConnectedCharacterRefs(node);
+            const manual = normalizeLtxCharacterRefs(node);
+            const seen = new Set();
+            const merged = [];
+            const addRef = ref => {
+                const key = ltxCharacterRefUrl(ref) || ref.id;
+                if(!key || seen.has(key)) return;
+                seen.add(key);
+                merged.push(ref);
+            };
+            connected.forEach(addRef);
+            manual.forEach(addRef);
+            return merged.slice(0, LTX_CHARACTER_REF_LIMIT);
+        }
+        async function addLtxCharacterRefFiles(node, files){
+            const imgs = [...files].filter(file => file.type.startsWith('image/'));
+            if(!imgs.length || !node) return;
+            const room = Math.max(0, LTX_CHARACTER_REF_LIMIT - ltxDirectorCharacterRefEntries(node).length);
+            if(!room) return;
+            pushUndo();
+            const refs = normalizeLtxCharacterRefs(node);
+            for(const file of imgs.slice(0, room)){
+                const form = new FormData();
+                form.append('files', file);
+                const data = await fetch('/api/ai/upload', {method:'POST', body:form}).then(async r => {
+                    if(!r.ok) throw new Error(await responseErrorMessage(r, langIsEn() ? 'Image upload failed' : '图片上传失败'));
+                    return r.json();
+                });
+                const uploaded = data.files?.[0];
+                if(!uploaded?.url) continue;
+                refs.push({
+                    id: uid('ltxcref'),
+                    url: uploaded.url,
+                    name: uploaded.name || file.name || 'ref',
+                    comfyName: ''
+                });
+            }
+            scheduleSave();
+            render();
+        }
+        function pickLtxCharacterRefs(nodeId){
+            const node = nodes.find(n => n.id === nodeId);
+            if(!node) return;
+            if(ltxDirectorCharacterRefEntries(node).length >= LTX_CHARACTER_REF_LIMIT) return;
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.multiple = true;
+            input.onchange = () => addLtxCharacterRefFiles(node, input.files);
+            input.click();
+        }
+        function removeLtxCharacterRef(node, refId){
+            const refs = normalizeLtxCharacterRefs(node);
+            const next = refs.filter(ref => ref.id !== refId);
+            if(next.length === refs.length) return;
+            pushUndo();
+            node.ltxCharacterRefs = next;
+            scheduleSave();
+            render();
+        }
+        function renderLtxCharacterRefs(container, node){
+            if(!container) return;
+            const refs = ltxDirectorCharacterRefEntries(node);
+            const list = container.querySelector('[data-ltx-char-ref-list]');
+            const empty = container.querySelector('[data-ltx-char-ref-empty]');
+            const addBtn = container.querySelector('[data-ltx-char-ref-add]');
+            const strength = container.querySelector('[data-ltx-reference-strength]');
+            if(!list) return;
+            list.innerHTML = refs.map((ref, i) => {
+                const src = ltxCharacterRefUrl(ref);
+                const preview = src && !isMissingAssetUrl(src)
+                    ? `<img src="${escapeAttr(src)}" alt="${escapeAttr(ref.name || ('ref ' + (i + 1)))}">`
+                    : (src ? missingAssetHtml(src, true) : '<i data-lucide="image" class="w-6 h-6 text-slate-400"></i>');
+                const connectedBadge = ref.connected
+                    ? `<span class="ltx-ref-connected-badge" title="${escapeAttr(tr('canvas.ltxCharacterRefConnected'))}">${escapeHtml(tr('canvas.ltxCharacterRefConnected'))}</span>`
+                    : '';
+                const removeBtn = ref.connected
+                    ? ''
+                    : `<button type="button" class="ltx-ref-remove" data-ltx-char-ref-remove="${escapeAttr(ref.id)}" title="${escapeAttr(tr('common.delete'))}">×</button>`;
+                return `<div class="ltx-character-ref-item ${ref.connected ? 'is-connected' : ''}" data-ltx-char-ref-id="${escapeAttr(ref.id)}">${preview}${connectedBadge}${removeBtn}</div>`;
+            }).join('');
+            if(empty) empty.style.display = refs.length ? 'none' : '';
+            if(addBtn){
+                addBtn.disabled = refs.length >= LTX_CHARACTER_REF_LIMIT;
+                addBtn.onclick = e => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    pickLtxCharacterRefs(node.id);
+                };
+            }
+            if(strength){
+                strength.value = Number(node.referenceStrength ?? 1);
+                strength.onmousedown = e => e.stopPropagation();
+                strength.onclick = e => e.stopPropagation();
+                strength.onchange = () => {
+                    node.referenceStrength = Math.max(0, Math.min(1, parseFloat(strength.value) || 0));
+                    strength.value = node.referenceStrength;
+                    scheduleSave();
+                };
+            }
+            list.querySelectorAll('[data-ltx-char-ref-remove]').forEach(btn => {
+                btn.onmousedown = e => e.stopPropagation();
+                btn.onclick = e => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    removeLtxCharacterRef(node, btn.dataset.ltxCharRefRemove);
+                };
+            });
+        }
+        async function ltxDirectorBuildCharacterRefPayload(node){
+            const refs = ltxDirectorCharacterRefEntries(node).filter(ref => ref?.url);
+            const payload = {
+                image_paths: '',
+                img_compression: Number(node.imgCompression) ?? 18
+            };
+            const width = Math.max(0, Number(node.customWidth) || 0);
+            const height = Math.max(0, Number(node.customHeight) || 0);
+            if(width > 0) payload.width = width;
+            if(height > 0) payload.height = height;
+            if(!refs.length) return payload;
+            const names = [];
+            for(const ref of refs){
+                const fullUrl = ltxCharacterRefUrl(ref);
+                const name = ref.comfyName || await uploadCanvasUrlToComfy(fullUrl);
+                ref.comfyName = name;
+                names.push(name);
+            }
+            payload.image_paths = names.join('\n');
+            return payload;
+        }
         function ltxDirectorSelectedSegment(node){
             const segs = node.ltxSegments || [];
             if(!segs.length) return null;
@@ -6954,6 +7500,8 @@
                 resize_method: 'maintain aspect ratio',
                 divisible_by: Math.max(1, Number(node.divisibleBy) || 32),
                 img_compression: Number(node.imgCompression) ?? 18,
+                save_prompts_to_file: false,
+                reference_strength: Math.max(0, Math.min(1, Number(node.referenceStrength ?? 1))),
                 timeline_ui: ''
             };
         }
@@ -7016,6 +7564,23 @@
                     <label class="field"><span class="setting-title">${tr('canvas.width')}</span><input class="setting-input" data-ltx-width type="number" min="0" max="8192" step="32" title="0 = auto"></label>
                     <label class="field"><span class="setting-title">${tr('canvas.height')}</span><input class="setting-input" data-ltx-height type="number" min="0" max="8192" step="32" title="0 = auto"></label>
                 </div>
+                <div class="ltx-character-ref-block" data-ltx-character-ref-block>
+                    <div class="ltx-character-ref-head">
+                        <div>
+                            <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">${tr('canvas.ltxCharacterRefs')}</div>
+                            <div class="text-[10px] text-gray-400">${tr('canvas.ltxCharacterRefsHint')}</div>
+                        </div>
+                        <label class="field ltx-ref-strength">
+                            <span class="setting-title">${tr('canvas.ltxReferenceStrength')}</span>
+                            <input class="setting-input" data-ltx-reference-strength type="number" min="0" max="1" step="0.01">
+                        </label>
+                    </div>
+                    <div class="ltx-character-ref-row">
+                        <div class="ltx-character-ref-list" data-ltx-char-ref-list></div>
+                        <button type="button" class="ltx-character-ref-add" data-ltx-char-ref-add title="${escapeAttr(tr('canvas.ltxCharacterRefAdd'))}">+</button>
+                    </div>
+                    <div class="ltx-character-ref-empty" data-ltx-char-ref-empty>${tr('canvas.ltxCharacterRefEmpty')}</div>
+                </div>
                 <div class="ltx-director-timeline-host" data-ltx-timeline-host></div>
                 <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">${tr('canvas.ltxLinkedImages')} · ${imageInputs.length}</div>
                 <div class="input-list mt-1"></div>
@@ -7028,6 +7593,7 @@
 
             renderPromptPreview(wrap.querySelector('.prompt-list'), promptInputs);
             bindLTXParamsRow(wrap, node);
+            renderLtxCharacterRefs(wrap.querySelector('[data-ltx-character-ref-block]'), node);
             if(!node._ltxEditor) ltxSyncConnectedImagesToTimeline(node);
             renderComfyImages(wrap.querySelector('.input-list'), node, imageInputs);
 
@@ -7103,9 +7669,11 @@
             } else refreshRunNodes(node, out);
             try {
                 const directorInputs = await ltxDirectorBuildTimelinePayload(node, globalPrompt);
+                const refPayload = await ltxDirectorBuildCharacterRefPayload(node);
                 const params = {
                     [LTX_DIRECTOR_WF_NODE]: directorInputs,
-                    [LTX_DIRECTOR_SEED_NODE]: {noise_seed: Number(node.noiseSeed ?? 12)}
+                    [LTX_DIRECTOR_SEED_NODE]: {noise_seed: Number(node.noiseSeed ?? 12)},
+                    [LTX_DIRECTOR_REF_NODE]: refPayload
                 };
                 const result = await fetch('/api/generate', {
                     method:'POST',
@@ -8853,7 +9421,7 @@
         function startLink(e, originId, originKind){
             e.stopPropagation();
             originKind = originKind || 'out';
-            const src = portPoint(originId, originKind);
+            const src = portPoint(originId, originKind === 'in-ref' ? 'in-ref' : originKind);
             const source = nodes.find(n => n.id === originId);
             tempLink = {from:originId, originKind, x1:src.x, y1:src.y, x2:src.x, y2:src.y};
             window.onmousemove = e2 => {
@@ -8874,12 +9442,24 @@
                     const targetId = target.dataset.id;
                     const fromId = originKind === 'out' ? originId : targetId;
                     const toId = originKind === 'out' ? targetId : originId;
-                    if(canConnect(fromId, toId)){
-                        if(!connections.some(c => c.from === fromId && c.to === toId)){ pushUndo(); connections.push({id:uid('c'), from:fromId, to:toId}); }
-                        syncGeneratorInputs();
-                        scheduleSave();
-                        render();
-                        linked = true;
+                    const toNode = nodes.find(n => n.id === toId);
+                    let toPort;
+                    if(toNode?.type === 'ltxDirector'){
+                        if(originKind === 'in-ref') toPort = 'characterRef';
+                        else if(originKind === 'in') toPort = 'timeline';
+                        else toPort = targetPort?.classList.contains('in-ref') ? 'characterRef' : 'timeline';
+                    }
+                    const port = toNode?.type === 'ltxDirector' ? (toPort || 'timeline') : undefined;
+                    if(canConnect(fromId, toId, port)){
+                        const exists = connections.some(c => c.from === fromId && c.to === toId && (toNode?.type !== 'ltxDirector' || ltxConnectionPort(c) === port));
+                        if(!exists){
+                            pushUndo();
+                            addConnection(fromId, toId, toPort);
+                            syncGeneratorInputs();
+                            scheduleSave();
+                            render();
+                            linked = true;
+                        }
                     }
                 }
                 if(!linked && originKind === 'out'){
@@ -8895,7 +9475,7 @@
                     } else {
                         openLinkCreateMenu(originId, originKind, e2.clientX, e2.clientY);
                     }
-                } else if(!linked && originKind === 'in'){
+                } else if(!linked && (originKind === 'in' || originKind === 'in-ref')){
                     openLinkCreateMenu(originId, originKind, e2.clientX, e2.clientY);
                 }
                 tempLink = null;
@@ -8943,11 +9523,18 @@
             };
             return walk(toId);
         }
-        function canConnect(fromId, toId){
+        function canConnect(fromId, toId, toPort){
             if(!fromId || !toId || fromId === toId) return false;
             const from = nodes.find(n => n.id === fromId);
             const to = nodes.find(n => n.id === toId);
             if(!from || !to) return false;
+            const targetPort = to.type === 'ltxDirector' ? (toPort || 'timeline') : 'timeline';
+            if(to.type === 'ltxDirector' && targetPort === 'characterRef'){
+                if(['image','group','output'].includes(from.type)) return true;
+                if(CANVAS_IMAGE_OUTPUT_TYPES.includes(from.type)) return generatedImageRefs(from).length > 0;
+                if(from.type === 'loop') return loopInputImageRefs(from).length > 0;
+                return false;
+            }
             if(CANVAS_GENERATOR_TYPES.includes(from.type)){
                 if(to.type === 'output') return true;
                 if(CANVAS_IMAGE_OUTPUT_TYPES.includes(from.type) && CANVAS_GENERATOR_TYPES.includes(to.type)){
@@ -8965,7 +9552,22 @@
             return CANVAS_GENERATOR_TYPES.includes(to.type) && ['image','prompt','loop','group','promptGroup','output','llm'].includes(from.type);
         }
         function sanitizeConnections(){
-            connections = (connections || []).filter(c => canConnect(c.from, c.to));
+            connections = (connections || []).filter(c => {
+                const to = nodes.find(n => n.id === c.to);
+                const toPort = to?.type === 'ltxDirector' ? ltxConnectionPort(c) : undefined;
+                return canConnect(c.from, c.to, toPort);
+            });
+        }
+        function addConnection(fromId, toId, toPort){
+            const to = nodes.find(n => n.id === toId);
+            const port = to?.type === 'ltxDirector' ? (toPort || 'timeline') : undefined;
+            if(!canConnect(fromId, toId, port)) return false;
+            const exists = connections.some(c => c.from === fromId && c.to === toId && (to?.type !== 'ltxDirector' || ltxConnectionPort(c) === port));
+            if(exists) return false;
+            const connection = {id:uid('c'), from:fromId, to:toId};
+            if(to?.type === 'ltxDirector' && port === 'characterRef') connection.toPort = 'characterRef';
+            connections.push(connection);
+            return true;
         }
         function endDrag(event=null){
             if(dragNode){
@@ -9082,7 +9684,10 @@
             const n = nodes.find(x => x.id === id);
             const el = nodesEl.querySelector(`.node[data-id="${id}"]`);
             if(!n || !el) return {x:0,y:0};
-            const port = el.querySelector(`.port.${kind}`);
+            let port = null;
+            if(kind === 'in-ref') port = el.querySelector('.port.in.in-ref');
+            else if(kind === 'in' && n.type === 'ltxDirector') port = el.querySelector('.port.in.timeline');
+            else port = el.querySelector(`.port.${kind}`);
             if(port){
                 const r = port.getBoundingClientRect();
                 return screenToWorld(r.left + r.width / 2, r.top + r.height / 2);
@@ -9094,7 +9699,7 @@
             linksEl.innerHTML = '';
             linkControlsEl.innerHTML = '';
             connections.forEach(c => {
-                const a = portPoint(c.from, 'out'), b = portPoint(c.to, 'in');
+                const a = portPoint(c.from, 'out'), b = portPoint(c.to, connectionInputPortKind(c));
                 linksEl.appendChild(pathEl(a.x, a.y, b.x, b.y, 'link'));
                 const btn = linkDeleteButton(c, a, b);
                 linkControlsEl.appendChild(btn);
@@ -9145,7 +9750,7 @@
         }
         function connectionDistanceToPoint(connection, point){
             const from = portPoint(connection.from, 'out');
-            const to = portPoint(connection.to, 'in');
+            const to = portPoint(connection.to, connectionInputPortKind(connection));
             let min = Infinity;
             let prev = cubicPoint(from, to, 0);
             for(let i = 1; i <= 28; i++){

@@ -348,7 +348,7 @@
                         <i data-lucide="list" class="w-3.5 h-3.5"></i>
                         <span id="nodesToggleText" data-i18n="comfy.showNodeList">显示完整节点列表</span>
                     </div>
-                    <div id="nodeList" class="node-list hidden"></div>
+                    <div id="nodeList" class="node-list"></div>
                 </main>
 
             </div>
@@ -812,6 +812,11 @@
                     </div>
                 `;
             }).join('');
+            if(workspaceMode === 'graph'){
+                nodeListEl.classList.remove('hidden');
+                const txt = document.getElementById('nodesToggleText');
+                if(txt) txt.textContent = tr('comfy.hideNodeList');
+            }
             refreshIcons();
         }
 
